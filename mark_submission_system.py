@@ -1,713 +1,305 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import threading
-import time
-import mysql.connector
-from mysql.connector import Error
+import sqlite3
 import openpyxl
-from openpyxl import Workbook
+import csv
+import pandas as pd
 import os
+import matplotlib
+matplotlib.use('Agg')  # Set the backend to Agg
 import matplotlib.pyplot as plt
-from collections import defaultdict
+from matplotlib.backends.backend_pdf import PdfPages
 
-# Function to get or insert language into the database
-def get_or_insert_language(cursor, language):
-    # Check if the language already exists (case-insensitive)
-    query = "SELECT lang_id FROM language WHERE LOWER(language) = LOWER(%s)"
-    cursor.execute(query, (language,))
-    result = cursor.fetchone()
-    
-    if result:
-        # If the language exists, return its ID
-        return result[0]
-    else:
-        # If the language does not exist, insert it and return the new ID
-        insert_query = "INSERT INTO language (language) VALUES (%s)"
-        cursor.execute(insert_query, (language,))
-        return cursor.lastrowid
 
-# Function to get or insert elective into the database
-def get_or_insert_elective(cursor, elective):
-    # Check if the elective already exists (case-insensitive)
-    query = "SELECT elective_id FROM student_elective WHERE LOWER(elective) = LOWER(%s)"
-    cursor.execute(query, (elective,))
-    result = cursor.fetchone()
-    
-    if result:
-        # If the elective exists, return its ID
-        return result[0]
-    else:
-        # If the elective does not exist, insert it and return the new ID
-        insert_query = "INSERT INTO student_elective (elective) VALUES (%s)"
-        cursor.execute(insert_query, (elective,))
-        return cursor.lastrowid
-
-# Function to get or insert gender into the database
-def get_or_insert_gender(cursor, gender):
-    # Check if the gender already exists (case-insensitive)
-    query = "SELECT gender_id FROM gender WHERE LOWER(gender) = LOWER(%s)"
-    cursor.execute(query, (gender,))
-    result = cursor.fetchone()
-    
-    if result:
-        # If the gender exists, return its ID
-        return result[0]
-    else:
-        # If the gender does not exist, insert it and return the new ID
-        insert_query = "INSERT INTO gender (gender) VALUES (%s)"
-        cursor.execute(insert_query, (gender,))
-        return cursor.lastrowid
-    
-def drop_and_create_database(host, user, password, database_name):
+def drop_and_create_database(database_name):
     try:
-        # Connect to MySQL server
-        conn = mysql.connector.connect(
-            host=host,
-            user=user,
-            password=password
-        )
-
-        cursor = conn.cursor(buffered=True)  # Buffered cursor for larger datasets
-
-        # Drop the database if it exists
-        drop_db_query = f"DROP DATABASE IF EXISTS {database_name}"
-        cursor.execute(drop_db_query)
-        print(f"Dropped database '{database_name}' if it existed.")
-
-        # Create the database
-        create_db_query = f"CREATE DATABASE {database_name}"
-        cursor.execute(create_db_query)
-        print(f"Created database '{database_name}'.")
-
-    except mysql.connector.Error as err:
+        conn = sqlite3.connect(database_name)
+        print(f"Database '{database_name}' opened/created.")
+    except sqlite3.Error as err:
         print(f"Error: {err}")
-
     finally:
-        # Close cursor and connection
-        if 'cursor' in locals() and cursor:
-            cursor.close()
-        if 'conn' in locals() and conn:
+        if conn:
+            conn.close()
+            print(f"Database '{database_name}' closed.")
+
+def clear_database_table(database_name, table_name):
+    try:
+        conn = sqlite3.connect(database_name)
+        cursor = conn.cursor()
+        cursor.execute(f"DELETE FROM {table_name}")
+        conn.commit()
+        print(f"Table '{table_name}' cleared successfully.")
+    except sqlite3.Error as err:
+        print(f"Error clearing table: {err}")
+    finally:
+        if conn:
             conn.close()
 
-def create_fresh_db_tables(host, user, password, database_name):
+def create_fresh_db_tables(database_name):
     try:
-        # Connect to MySQL server
-        conn = mysql.connector.connect(
-            host=host,
-            user=user,
-            password=password,
-            database=database_name
-        )
-
+        conn = sqlite3.connect(database_name)
         cursor = conn.cursor()
-
-        # SQL script to set up database schema
         query = """
-        
-        
-        DROP TABLE IF EXISTS gender;
-
-        
-        CREATE TABLE IF NOT EXISTS `gender` (
-          `gender_id` int(11) NOT NULL AUTO_INCREMENT,
-          `gender` char(2) NOT NULL,
-          PRIMARY KEY (`gender_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-        
-        DROP TABLE IF EXISTS language;
-        CREATE TABLE IF NOT EXISTS `language` (
-          `lang_id` int(11) NOT NULL AUTO_INCREMENT,
-          `language` varchar(20) NOT NULL,
-          PRIMARY KEY (`lang_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-        
-        DROP TABLE IF EXISTS student_elective;
-        CREATE TABLE IF NOT EXISTS `student_elective` (
-          `elective_id` int(11) NOT NULL AUTO_INCREMENT,
-          `elective` varchar(5) NOT NULL,
-          PRIMARY KEY (`elective_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-        
-        DROP TABLE IF EXISTS schools;
-        CREATE TABLE IF NOT EXISTS `schools` (
-          `school_id` int(11) NOT NULL AUTO_INCREMENT,
-          `school` varchar(20) NOT NULL DEFAULT 'sch',
-          PRIMARY KEY (`school_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
-        DROP TABLE IF EXISTS school_class;
-        CREATE TABLE IF NOT EXISTS `school_class` (
-          `schlass_id` int(11) NOT NULL AUTO_INCREMENT,
-          `schlass_code` char(7) NOT NULL,
-          `school_fk_id` int(11) NOT NULL,
-          `schlass_lang_fk_id` int(11) NOT NULL,
-          PRIMARY KEY (`schlass_id`),
-          KEY `school_fk_id` (`school_fk_id`),
-          KEY `schlass_lang_fk_id` (`schlass_lang_fk_id`),
-          CONSTRAINT `school_class_ibfk_1` FOREIGN KEY (`school_fk_id`) REFERENCES `schools` (`school_id`),
-          CONSTRAINT `school_class_ibfk_2` FOREIGN KEY (`schlass_lang_fk_id`) REFERENCES `language` (`lang_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
-        DROP TABLE IF EXISTS stud_school_class;
-        CREATE TABLE IF NOT EXISTS `stud_school_class` (
-          `student_id` int(11) NOT NULL AUTO_INCREMENT,
-          `student_name` varchar(50) NOT NULL,
-          `gender_fk_id` int(11) NOT NULL,
-          `school_class_fk_id` int(11) NOT NULL,
-          `stud_class_elective_fk_id` int(11) NOT NULL,
-          PRIMARY KEY (`student_id`),
-          KEY `gender_fk_id` (`gender_fk_id`),
-          KEY `school_class_fk_id` (`school_class_fk_id`),
-          KEY `stud_class_elective_fk_id` (`stud_class_elective_fk_id`),
-          CONSTRAINT `stud_school_class_ibfk_1` FOREIGN KEY (`school_class_fk_id`) REFERENCES `school_class` (`schlass_id`),
-          CONSTRAINT `stud_school_class_ibfk_2` FOREIGN KEY (`gender_fk_id`) REFERENCES `gender` (`gender_id`),
-          CONSTRAINT `stud_school_class_ibfk_3` FOREIGN KEY (`stud_class_elective_fk_id`) REFERENCES `student_elective` (`elective_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
-        DROP TABLE IF EXISTS student_examp_score_paper_2;
-        CREATE TABLE IF NOT EXISTS `student_exam_score_paper_2` (
-          `paper_2_id` int(11) NOT NULL AUTO_INCREMENT,
-          `Eq1` int NOT NULL,
-          `Eq2` int NOT NULL,
-          `Eq3` int NOT NULL,
-          `Eq4` int NOT NULL,
-          `student_id_fk` int(11) NOT NULL,
-          PRIMARY KEY (`paper_2_id`),
-          KEY `student_id_fk` (`student_id_fk`),
-          CONSTRAINT `student_exam_score_paper_2_ibfk_1` FOREIGN KEY (`student_id_fk`) REFERENCES `stud_school_class` (`student_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
-        DROP TABLE IF EXISTS student_exam_score_section_a;
-        CREATE TABLE IF NOT EXISTS `student_exam_score_section_a` (
-          `id` int(11) NOT NULL AUTO_INCREMENT,
-          `section_A_Mc` int NOT NULL,
-          `student_id_fk` int(11) NOT NULL,
-          PRIMARY KEY (`id`),
-          KEY `student_id_fk` (`student_id_fk`),
-          CONSTRAINT `student_exam_score_section_a_ibfk_1` FOREIGN KEY (`student_id_fk`) REFERENCES `stud_school_class` (`student_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
-        DROP TABLE IF EXISTS student_exam_score_section_b;
-        CREATE TABLE IF NOT EXISTS `student_exam_score_section_b` (
-          `section_B_id` int(11) NOT NULL AUTO_INCREMENT,
-          `Bq1` int NOT NULL,
-          `Bq2` int NOT NULL,
-          `Bq3` int NOT NULL,
-          `Bq4` int NOT NULL,
-          `Bq5` int NOT NULL,
-          `student_id_fk` int(11) NOT NULL,
-          PRIMARY KEY (`section_B_id`),
-          KEY `student_id_fk` (`student_id_fk`),
-          CONSTRAINT `student_exam_score_section_b_ibfk_1` FOREIGN KEY (`student_id_fk`) REFERENCES `stud_school_class` (`student_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-        
-        DROP TABLE IF EXISTS `student_computed_grade`;
-        CREATE TABLE `student_computed_grade` (
-          `grade_id` int(11) NOT NULL AUTO_INCREMENT,
-          `paper_1_grade` decimal(10,2) DEFAULT NULL,
-          `paper_2_grade` decimal(10,2) DEFAULT NULL,
-          `level_score` varchar(10) DEFAULT NULL,
-          `grade` decimal(10,2) DEFAULT NULL,
-          `stud_school_class_id` int(11) NOT NULL,
-          PRIMARY KEY (`grade_id`),
-          UNIQUE KEY `stud_school_class_id_2` (`stud_school_class_id`),
-          KEY `stud_school_class_id` (`stud_school_class_id`),
-          CONSTRAINT `student_computed_grade_ibfk_1` FOREIGN KEY (`stud_school_class_id`) REFERENCES `stud_school_class` (`student_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+        CREATE TABLE IF NOT EXISTS student_computed_grade (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            School_name TEXT NOT NULL,
+            Classnum VARCHAR(5) NOT NULL,
+            Name VARCHAR(50) NOT NULL,
+            Gender CHAR(1) NOT NULL CHECK (Gender IN ('M', 'F')),
+            Elective CHAR(2) NOT NULL CHECK (Elective IN ('AB', 'AC', 'BC')),
+            Lang CHAR(1) NOT NULL CHECK (Lang IN ('C', 'E')),
+            Mc INT NOT NULL,
+            Bq1 INT NOT NULL,
+            Bq2 INT NOT NULL,
+            Bq3 INT NOT NULL,
+            Bq4 INT NOT NULL,
+            Bq5 INT NOT NULL,
+            Eq1 INT NOT NULL,
+            Eq2 INT NOT NULL,
+            Eq3 INT NOT NULL,
+            Eq4 INT NOT NULL,
+            ComputedSCORE DECIMAL(10,2) DEFAULT NULL,
+            Level VARCHAR(5) DEFAULT NULL
+        )
         """
-
-        # Execute the entire SQL script
-        cursor.execute(query,multi=True)
-        print("Database setup successfully.")
-
-    except mysql.connector.Error as err:
-        print(f"Error: {err}")
-
-    finally:
-        # Close cursor and connection
-        if 'cursor' in locals() and cursor:
-            cursor.close()
-        if 'conn' in locals() and conn:
-            conn.close()
-        
-def test_connection(button):
-    #test_connection_button.config(state="disabled")
-    host = entry_host.get() 
-    user = entry_user.get()
-    password = entry_password.get()
-
-    try:
-        conn = mysql.connector.connect(
-            host=host,
-            user=user,
-            password=password
-        )
-
-        if conn.is_connected():
-            entry_host.config(state='readonly')
-            entry_user.config(state='readonly')
-            entry_password.config(state='readonly')
-            button.config(state=tk.DISABLED, text="Connection Established")
-            conn.close()
-        else:
-            button.config(state=tk.NORMAL, text="Click To Retry...")
-            messagebox.showerror("Connection Status", "Connection Failed")
-
-    except Error as e:
-        messagebox.showerror("Connection Status", f"Error: {str(e)}")
-
-# Function to connect to MySQL and execute query
-def execute_query(host, user, password, database_name, query):
-    try:
-        conn = mysql.connector.connect(
-            host=host,
-            user=user,
-            password=password,
-            database=database_name
-        )
-
-        if conn.is_connected():
-            cursor = conn.cursor(dictionary=True)
-            cursor.execute(query)
-            results = cursor.fetchall()
-            cursor.close()
-            conn.close()
-            return results
-
-    except Error as e:
-        print(f"Error: {e}")
-
-    return None
-
-
-def plot_results(results,data_point='gender', output_folder = 'result'):
-    if results:
-        # Prepare data for plotting
-        data_points = [result[f'{data_point}'] for result in results]
-        counts = [result['count'] for result in results]
-
-        # Plotting the pie chart
-        plt.figure(figsize=(8, 6))
-        plt.pie(counts, labels=[f"{data_point} ({count})" for data_point, count in zip(data_points, counts)], autopct='%1.1f%%', startangle=140)
-        plt.title(f'Distribution of Students by {data_point} ')
-        plt.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle
-
-        # Save the pie chart to the output directory
-        
-        if not os.path.exists(output_folder):
-            os.makedirs(output_folder)
-    
-        output_file = os.path.join(output_folder, f'{data_point}_distribution_piechart.png')
-        plt.savefig(output_file)
-
-        # Display the plot (optional)
-        #plt.show()
-
-        print(f"Pie chart saved to: {output_file}")
-    else:
-        print("No results returned from the query.")
-
-def fetch_data_from_db(query, db_config):
-    try:
-        # Establish a database connection
-        conn = mysql.connector.connect(
-            host=db_config['host'],
-            user=db_config['user'],
-            password=db_config['password'],
-            database=db_config['database']
-        )
-        cursor = conn.cursor()
-
-        # Execute the query
         cursor.execute(query)
-
-        # Fetch all rows from the executed query
-        rows = cursor.fetchall()
-
-        # Fetch column names
-        column_names = [i[0] for i in cursor.description]
-
-        return column_names, rows
-
-    except mysql.connector.Error as err:
+        print("Database table 'student_computed_grade' created successfully.")
+    except sqlite3.Error as err:
         print(f"Error: {err}")
-        return None, None
-
     finally:
-        if 'cursor' in locals():
-            cursor.close()
-        if 'conn' in locals():
+        if conn:
             conn.close()
 
-# Function to save rows to Excel files based on the first column value
-def save_to_excel(column_names, rows, output_folder):
-    # Group rows by the value of the first column
-    grouped_rows = defaultdict(list)
-    for row in rows:
-        file_key = row[0]
-        grouped_rows[file_key].append(row)
-
-    # Save each group to a separate Excel file
-    for file_key, group in grouped_rows.items():
-        # Create a workbook and select the active worksheet
-        wb = Workbook()
-        ws = wb.active
-
-        # Append the column names as the first row
-        ws.append(column_names[1:])
-
-        # Append the rows in the group
-        for row in group:
-            ws.append(row[1:])
-
-        # Save the workbook to the specified file
-        output_file = os.path.join(output_folder, f"{file_key}.xlsx")
-        wb.save(output_file)
-        print(f"Data saved to {output_file}")
-   
-
-def select_input_folder():
-    input_folder = filedialog.askdirectory()
-    if input_folder:
-        input_folder_var.set(input_folder)
-
-def select_output_folder():
-    output_folder = filedialog.askdirectory()
-    if output_folder:
-        output_folder_var.set(output_folder)
-
-
-def perform_analysis(button):
-    # Disable the button
-    button.config(state=tk.DISABLED)
+def validate_data(row):
+    if not isinstance(row['Classnum'], str):
+        raise ValueError(f"Invalid Classnum for {row['Name']}: must be a string")
+    if not isinstance(row['Name'], str):
+        raise ValueError(f"Invalid Name: {row['Name']}")
+    if row['Gender'] not in ['M', 'F']:
+        raise ValueError(f"Invalid Gender for {row['Name']}: must be 'M' or 'F'")
+    if row['Elective'] not in ['AB', 'AC', 'BC']:
+        raise ValueError(f"Invalid Elective for {row['Name']}: must be 'AB', 'AC', or 'BC'")
+    if row['Lang'] not in ['C', 'E']:
+        raise ValueError(f"Invalid Lang for {row['Name']}: must be 'C' or 'E'")
     
-    input_folder = input_folder_var.get()
-    output_folder = output_folder_var.get()
-    if input_folder and output_folder:
-        #messagebox.showinfo("Selected Folders", f"Input Folder: {input_folder}\nOutput Folder: {output_folder}")
-        host= entry_host.get()
-        user= entry_user.get()
-        password= entry_password.get()
-        database_name= 'mark_submission_system'
-    
-        drop_and_create_database(host, user, password, database_name)
-        time.sleep(10) # sleep 10 seconds
-        create_fresh_db_tables(host, user, password, database_name)
-        time.sleep(10) # sleep 10 seconds
-    
+    if not (0 <= row['Mc'] <= 40):
+        raise ValueError(f"Invalid Mc score for {row['Name']}: must be between 0 and 40")
+    for bq in ['Bq1', 'Bq2', 'Bq3', 'Bq4', 'Bq5']:
+        if not (0 <= row[bq] <= 12):
+            raise ValueError(f"Invalid {bq} score for {row['Name']}: must be between 0 and 12")
+    for eq in ['Eq1', 'Eq2', 'Eq3', 'Eq4']:
+        if not (0 <= row[eq] <= 15):
+            raise ValueError(f"Invalid {eq} score for {row['Name']}: must be between 0 and 15")
 
-    
-    
-        # Initialize SQL Database Connection For Inserting Records
-        conn = mysql.connector.connect(
-            host=host,
-            user=user,
-            password=password,  # Replace with the actual password
-            database=database_name
-        )
-
-        try:
-            cursor = conn.cursor(buffered=True)  # Buffered cursor for larger datasets
-
-            folder_path = input_folder
-            print(os.listdir(folder_path))
-        
-            for file_name in os.listdir(folder_path):
-            
-                if file_name.endswith(".xlsx"):
-                    print(f"Inserting contents of file {file_name} into Mysql Database ...")
-                    schoolname = file_name[:-5]
-                    last_inserted_school_row_id = 0
-
-                    # Insert school
-                    sql_school = "INSERT INTO schools (school_id, school) VALUES (default, %s)"
-                    cursor.execute(sql_school, (schoolname,))
-                    last_inserted_school_row_id = cursor.lastrowid
-
-                    # Load Excel workbook
-                    wb = openpyxl.load_workbook(os.path.join(folder_path, file_name))
-                    sheet = wb.active
-
-                    # Define column mapping (adjust as needed)
-                    column_mapping = {
-                        1: "Classnum",
-                        2: "Name",
-                        3: "Gender",
-                        4: "Elective",
-                        5: "Lang",
-                        6: "Mc", # total is 40 pts
-                        
-                        7: "Bq1", # n/12 * 5: on each question
-                        8: "Bq2", # n/12 * 5: on each question
-                        9: "Bq3", # n/12 * 5: on each question
-                        10: "Bq4",# n/12 * 5: on each question
-                        11: "Bq5",# n/12 * 5: on each question 
-                        # Weighting of Paper I is 68.75% == (40 + 25) points
-                        
-                        12: "Eq1",# n/15 * 4 : on each question
-                        13: "Eq2",# n/15 * 4 : on each question
-                        14: "Eq3",# n/15 * 4 : on each question
-                        15: "Eq4" # n/15 * 4 : on each question
-                        # Weighting of Paper II is 31.25% === 16points
-                    }
-
-                    # Iterate through rows in the sheet
-                    for i in range(2, sheet.max_row + 1):
-                        row_data = {}
-                        for j in range(1, sheet.max_column + 1):
-                            cell_value = sheet.cell(row=i, column=j).value
-                            if j in column_mapping:
-                                row_data[column_mapping[j]] = cell_value if cell_value is not None and cell_value != "" else None
-                            #print(cell_value if cell_value is not None else "None", end=" ")
-
-                        # Insert language and retrieve foreign key
-                        shclass_lang_fk_id = get_or_insert_language(cursor, row_data['Lang'])
-
-                        # Insert school class
-                        sql_school_class = """
-                            INSERT INTO school_class (schlass_id, schlass_code, school_fk_id, schlass_lang_fk_id)
-                            VALUES (default, %s, %s, %s)
-                        """
-                        cursor.execute(sql_school_class, (row_data["Classnum"], last_inserted_school_row_id, shclass_lang_fk_id))
-                        last_inserted_schlass_row_id = cursor.lastrowid
-
-                        # Insert student elective and retrieve foreign key
-                        stud_class_elective_fk_id = get_or_insert_elective(cursor, row_data['Elective'])
-
-                        # Insert gender and retrieve foreign key
-                        gender_fk_id = get_or_insert_gender(cursor, row_data['Gender'])
-
-                        # Insert student school class
-                        sql_stud_school_class = """
-                            INSERT INTO stud_school_class (student_id, student_name, gender_fk_id, school_class_fk_id, stud_class_elective_fk_id)
-                            VALUES (default, %s, %s, %s, %s)
-                        """
-                        cursor.execute(sql_stud_school_class, (row_data["Name"], gender_fk_id, last_inserted_schlass_row_id, stud_class_elective_fk_id))
-                        last_inserted_stud_school_class_id = cursor.lastrowid
-
-                        # Insert student exam scores section A (MC)
-                        sql_exam_section_a = """
-                            INSERT INTO student_exam_score_section_a (id, section_A_Mc, student_id_fk)
-                            VALUES (default, %s, %s)
-                        """
-                        cursor.execute(sql_exam_section_a, (row_data["Mc"], last_inserted_stud_school_class_id))
-
-                        # Insert student exam scores section B (Bq1-Bq5)
-                        sql_exam_section_b = """
-                            INSERT INTO student_exam_score_section_b (section_B_id, Bq1, Bq2, Bq3, Bq4, Bq5, student_id_fk)
-                            VALUES (default, %s, %s, %s, %s, %s, %s)
-                        """
-                        cursor.execute(sql_exam_section_b, (row_data["Bq1"], row_data["Bq2"], row_data["Bq3"], row_data["Bq4"], row_data["Bq5"], last_inserted_stud_school_class_id))
-
-                        PAPER_I_Percent_Score = row_data["Mc"] +  (row_data["Bq1"]/12 * 5) + (row_data["Bq2"]/12 * 5) + (row_data["Bq3"]/12 * 5) + (row_data["Bq4"]/12 * 5) + (row_data["Bq5"]/12 * 5) #n/12 * 5: on each question
-                        # Weighting of Paper I is 68.75% == (40 + 25) points
-                        PAPER_I_Percent_Score = PAPER_I_Percent_Score/65 * 68.75
-
-                        
-
-
-
-
-                        # Insert student exam scores paper 2 (Eq1-Eq4)
-                        sql_exam_paper_2 = """
-                            INSERT INTO student_exam_score_paper_2 (paper_2_id, Eq1, Eq2, Eq3, Eq4, student_id_fk)
-                            VALUES (default, %s, %s, %s, %s, %s)
-                        """
-                        cursor.execute(sql_exam_paper_2, (row_data["Eq1"], row_data["Eq2"], row_data["Eq3"], row_data["Eq4"], last_inserted_stud_school_class_id))
-
-                        PAPER_II_Percent_Score = (row_data["Eq1"]/15 * 4) + (row_data["Eq2"]/15 * 4) + (row_data["Eq3"]/15 * 4) + (row_data["Eq4"]/15 * 4)  #n/15 * 4: on each question
-                        # Weighting of Paper II is 31.25% == 16 points
-                        PAPER_II_Percent_Score = PAPER_II_Percent_Score/16 * 31.25
-                        
-
-                        ### Insert Results of Paper I and Paper II to Database
-                        LEVEL_SCORE = 'U'
-                        GRADE = PAPER_I_Percent_Score + PAPER_II_Percent_Score
-                        
-                        if (GRADE >= 85):
-                            LEVEL_SCORE = '5**'
-                        elif(GRADE >= 77):
-                            LEVEL_SCORE = '5*'
-                        elif(GRADE >= 70):
-                            LEVEL_SCORE = '5'
-                        elif(GRADE >= 55):
-                            LEVEL_SCORE = '4'
-                        elif(GRADE >= 45):
-                            LEVEL_SCORE = '3'
-                        elif(GRADE >= 30):
-                            LEVEL_SCORE = '2'
-                        elif(GRADE >= 20):
-                            LEVEL_SCORE = '1'
-                        
-                        
-
-                        sql_exam_percentages = """
-                            INSERT INTO student_computed_grade (grade_id, paper_1_grade, paper_2_grade,level_score,grade, stud_school_class_id)
-                            VALUES (default, %s, %s,%s,%s, %s)
-                        """
-                        cursor.execute(sql_exam_percentages, (PAPER_I_Percent_Score,PAPER_II_Percent_Score,LEVEL_SCORE,GRADE, last_inserted_stud_school_class_id))
-
-
-
-
-                        conn.commit()  # Commit per school
-
-                        #print()  # Newline for clarity
-                else:
-                    messagebox.showerror("Doing Nothing", f"The folder {input_folder} contains no excel files. Ensure you provide the corrent upload folder  ")
-
-
-            cursor.close()  # Close cursor after all operations
-            ## Start of Generation of Reports
-            # SQL Query to count male and female students
-            query = """
-                SELECT gender.gender, COUNT(*) AS count
-                FROM stud_school_class
-                INNER JOIN gender ON stud_school_class.gender_fk_id = gender.gender_id
-                WHERE gender.gender IN ('M', 'F')
-                GROUP BY gender.gender;
-            """
-
-            query_languages = """
-                SELECT language.language, COUNT(*) AS count
-                FROM stud_school_class
-                INNER JOIN school_class ON stud_school_class.school_class_fk_id = school_class.schlass_id
-                INNER JOIN language on school_class.schlass_lang_fk_id = language.lang_id
-                WHERE language.language IN ('E', 'C')
-                GROUP BY language.language;
-            """
-
-            query_electives = """
-                SELECT student_elective.elective, COUNT(*) AS count
-                FROM stud_school_class
-                INNER JOIN student_elective ON stud_school_class.stud_class_elective_fk_id = student_elective.elective_id
-                WHERE student_elective.elective IN ('AC', 'BC','AB')
-                GROUP BY student_elective.elective;
-            """
-
-            # Execute the query, plot and save png files to output folder
-            results = execute_query(host, user, password, database_name, query_electives)
-            plot_results(results,'elective',output_folder=output_folder)
-            results = execute_query(host, user, password, database_name, query)
-            plot_results(results,'gender',output_folder=output_folder)
-            results = execute_query(host, user, password, database_name, query_languages)
-            plot_results(results,'language',output_folder=output_folder)
-
-
-            print("Data Operations Completed Successfully.......")
-        except mysql.connector.Error as err:
-            print(f"Error: {err}")
-            conn.rollback()  # Rollback in case of any error
-        else:
-            # create the results.xlsx and develop a plot
-            # Database configuration
-            db_config = {
-                'host': host,
-                'user': user,
-                'password': password,
-                'database': 'mark_submission_system'
-            }
-            # SQL query to fetch data
-            query = """
-                    SELECT schools.school, school_class.schlass_code, stud_school_class.student_name,
-                       gender.gender, student_elective.elective, language.language, 
-                       student_computed_grade.paper_1_grade, student_computed_grade.paper_2_grade, 
-                       student_computed_grade.grade, student_computed_grade.level_score 
-                    FROM schools 
-		            INNER JOIN school_class on schools.school_id = school_class.school_fk_id
-                    INNER JOIN  language on school_class.schlass_lang_fk_id = language.lang_id
-                    INNER JOIN  stud_school_class on school_class.schlass_id = stud_school_class.school_class_fk_id
-                    INNER JOIN  student_elective on stud_school_class.stud_class_elective_fk_id = student_elective.elective_id
-                    INNER JOIN  gender on stud_school_class.gender_fk_id = gender.gender_id
-                    INNER JOIN student_computed_grade on stud_school_class.student_id = student_computed_grade.stud_school_class_id
-                    ORDER BY schools.school
+def import_data(folder_path, database_name, table_name):
+    clear_database_table(database_name, table_name)
+    try:
+        conn = sqlite3.connect(database_name)
+        cursor = conn.cursor()
+        all_files = os.listdir(folder_path)
+        data_files = [f for f in all_files if f.endswith((".xlsx", ".csv"))]
+        for data_file in data_files:
+            file_name, file_extension = os.path.splitext(data_file)
+            filepath = os.path.join(folder_path, data_file)
+           
+            if file_extension == '.xlsx':
+                df = pd.read_excel(filepath, engine='openpyxl')
+            elif file_extension == '.csv':
+                df = pd.read_csv(filepath)
+           
+            for _, row in df.iterrows():
+                validate_data(row)
+                
+                values = (file_name, row['Classnum'], row['Name'], row['Gender'], row['Elective'],
+                          row['Lang'], row['Mc'], row['Bq1'], row['Bq2'], row['Bq3'], row['Bq4'],
+                          row['Bq5'], row['Eq1'], row['Eq2'], row['Eq3'], row['Eq4'])
+                insert_query = f"""
+                INSERT INTO {table_name} (School_name, Classnum, Name, Gender, Elective, Lang, Mc,
+                                            Bq1, Bq2, Bq3, Bq4, Bq5, Eq1, Eq2, Eq3, Eq4)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
+                cursor.execute(insert_query, values)
+        conn.commit()
+        print("Data import from all files completed.")
+    except (sqlite3.Error, pd.errors.EmptyDataError, KeyError, ValueError) as err:
+        print(f"Error: {err}")
+        raise
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+def compute_score(mc, bq1, bq2, bq3, bq4, bq5, eq1, eq2, eq3, eq4):
+    section_a = mc * (40/40)
+    section_b = (bq1/12 * 5) + (bq2/12 * 5) + (bq3/12 * 5) + (bq4/12 * 5) + (bq5/12 * 5)
+    paper_i = ((section_a + section_b)/65) * 0.6875
+    paper_ii = (((eq1/15 * 4) + (eq2/15 * 4) + (eq3/15 * 4) + (eq4/15 * 4))/16) * 0.3125
+    total_score = paper_i + paper_ii
+    percentage_score = total_score * 100
+    return round(percentage_score, 2)
+
+def determine_level(score):
+    cut_scores = {
+        '5**': 85, '5*': 77, '5': 70, '4': 55,
+        '3': 45, '2': 30, '1': 20, 'U': 5
+    }
+    for level, cut_score in cut_scores.items():
+        if score >= cut_score:
+            return level
+    return 'U'
+
+class MarkSubmissionSystem:
+    def __init__(self, master):
+        self.master = master
+        master.title("Mark Submission System")
+        master.geometry("400x300")
+
+        self.input_folder = tk.StringVar()
+        self.output_folder = tk.StringVar()
+
+        tk.Label(master, text="Input Folder:").grid(row=0, column=0, padx=10, pady=10)
+        tk.Entry(master, textvariable=self.input_folder, width=30).grid(row=0, column=1, padx=10, pady=10)
+        tk.Button(master, text="Browse", command=self.browse_input).grid(row=0, column=2, padx=10, pady=10)
+
+        tk.Label(master, text="Output Folder:").grid(row=1, column=0, padx=10, pady=10)
+        tk.Entry(master, textvariable=self.output_folder, width=30).grid(row=1, column=1, padx=10, pady=10)
+        tk.Button(master, text="Browse", command=self.browse_output).grid(row=1, column=2, padx=10, pady=10)
+
+        tk.Button(master, text="Process Data", command=self.process_data).grid(row=2, column=1, pady=20)
+
+        self.status_label = tk.Label(master, text="")
+        self.status_label.grid(row=3, column=0, columnspan=3, pady=10)
+
+    def browse_input(self):
+        folder = filedialog.askdirectory()
+        self.input_folder.set(folder)
+
+    def browse_output(self):
+        folder = filedialog.askdirectory()
+        self.output_folder.set(folder)
+
+    def process_data(self):
+        if not self.input_folder.get() or not self.output_folder.get():
+            messagebox.showerror("Error", "Please select both input and output folders.")
+            return
+
+        self.status_label.config(text="Processing... Please wait.")
+        threading.Thread(target=self.run_processing, daemon=True).start()
+
+    def run_processing(self):
+        try:
+            folder_path = self.input_folder.get()
+            result_folder = self.output_folder.get()
+            database_folder = os.path.join(result_folder, "database")
+            os.makedirs(database_folder, exist_ok=True)
+            database_name = os.path.join(database_folder, "mark_submission_system.db")
+            table_name = "student_computed_grade"
+
+            for file in os.listdir(result_folder):
+                file_path = os.path.join(result_folder, file)
+                if os.path.isfile(file_path):
+                    os.unlink(file_path)
+
+            drop_and_create_database(database_name)
+            create_fresh_db_tables(database_name)
+
+            import_data(folder_path, database_name, table_name)
+
+            conn = sqlite3.connect(database_name)
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT * FROM student_computed_grade")
+            rows = cursor.fetchall()
+
+            total_candidates = len(rows)
+            male_candidates = sum(1 for row in rows if row[4] == 'M')
+            female_candidates = sum(1 for row in rows if row[4] == 'F')
+            english_candidates = sum(1 for row in rows if row[6] == 'E')
+            chinese_candidates = sum(1 for row in rows if row[6] == 'C')
+            elective_counts = {'AB': 0, 'AC': 0, 'BC': 0}
+            for row in rows:
+                elective_counts[row[5]] += 1
+
+            plt.figure(figsize=(15, 15))
+            plt.subplot(2, 2, 1)
+            plt.pie([male_candidates, female_candidates], labels=['Male', 'Female'], autopct='%1.1f%%')
+            plt.title('Gender Distribution')
+            plt.subplot(2, 2, 2)
+            plt.pie([english_candidates, chinese_candidates], labels=['English', 'Chinese'], autopct='%1.1f%%')
+            plt.title('Language Distribution')
+            plt.subplot(2, 2, 3)
+            plt.bar(elective_counts.keys(), elective_counts.values())
+            plt.title('Elective Distribution')
+            plt.ylabel('Number of Candidates')
+            plt.subplot(2, 2, 4)
+            plt.axis('off')
+            plt.text(0.1, 0.9, f"Total Candidates: {total_candidates}", fontsize=12)
+            plt.text(0.1, 0.8, f"Male Candidates: {male_candidates}", fontsize=12)
+            plt.text(0.1, 0.7, f"Female Candidates: {female_candidates}", fontsize=12)
+            plt.text(0.1, 0.6, f"English Candidates: {english_candidates}", fontsize=12)
+            plt.text(0.1, 0.5, f"Chinese Candidates: {chinese_candidates}", fontsize=12)
+            plt.tight_layout()
+
+            plt.savefig(os.path.join(result_folder, 'statistics.png'))
+            plt.close()
+
+            with PdfPages(os.path.join(result_folder, 'statistics.pdf')) as pdf:
+                fig = plt.figure(figsize=(15, 15))
+                img = plt.imread(os.path.join(result_folder, 'statistics.png'))
+                plt.imshow(img)
+                plt.axis('off')
+                pdf.savefig(fig)
+                plt.close(fig)
+
+            os.remove(os.path.join(result_folder, 'statistics.png'))
+
+            for row in rows:
+                computed_score = compute_score(row[7], row[8], row[9], row[10], row[11], row[12], row[13], row[14], row[15], row[16])
+                level = determine_level(computed_score)
+                cursor.execute("""
+                UPDATE student_computed_grade
+                SET ComputedSCORE = ?, Level = ?
+                WHERE ID = ?
+                """, (computed_score, level, row[0]))
+            conn.commit()
+
+            cursor.execute("SELECT DISTINCT School_name FROM student_computed_grade")
+            schools = cursor.fetchall()
+            for school in schools:
+                school_name = school[0]
+                cursor.execute("""
+                SELECT Classnum, Name, Gender, Elective, Lang, Mc, Bq1, Bq2, Bq3, Bq4, Bq5, Eq1, Eq2, Eq3, Eq4, ComputedSCORE, Level
+                FROM student_computed_grade
+                WHERE School_name = ?
+                """, (school_name,))
+                school_data = cursor.fetchall()
+               
+                excel_file_path = os.path.join(result_folder, f"{school_name}_results.xlsx")
+                if os.path.exists(excel_file_path):
+                    os.remove(excel_file_path)
+                wb = openpyxl.Workbook()      
+                ws = wb.active
+                ws.append(["Classnum", "Name", "Gender", "Elective", "Language", "MC", "BQ1", "BQ2", "BQ3", "BQ4", "BQ5", "EQ1", "EQ2", "EQ3", "EQ4", "Computed Score", "Level"])
+                for student in school_data:
+                    ws.append(student)
+                wb.save(excel_file_path)
+               
+                csv_file_path = os.path.join(result_folder, f"{school_name}_results.csv")
+                with open(csv_file_path, 'w', newline='') as csvfile:
+                    csvwriter = csv.writer(csvfile)
+                    csvwriter.writerow(["Classnum", "Name", "Gender", "Elective", "Language", "MC", "BQ1", "BQ2", "BQ3", "BQ4", "BQ5", "EQ1", "EQ2", "EQ3", "EQ4", "Computed Score", "Level"])
+                    csvwriter.writerows(school_data)
+
+            conn.close()
+
+            self.master.after(0, lambda: self.status_label.config(text="Processing completed successfully."))
+        except Exception as e:
+            self.master.after(0, lambda: self.status_label.config(text=f"Error: {str(e)}"))
 
 
-            # Fetch data from database
-            column_names, rows = fetch_data_from_db(query, db_config)
-
-            if column_names and rows:
-                # Save data to Excel
-                save_to_excel(column_names, rows,output_folder)
-            else:
-                print("Failed to fetch data from database.")
-
-            
-            
-
-        finally:
-            conn.close()  # Close connection at the end
-            messagebox.showinfo("Task Complete", f"The Statistic Analysis task is complete.\n Access Report of Results in {output_folder} ")
-
-
-
-
-
-    else:
-        messagebox.showwarning("Incomplete Selection", "Please select both input and output folders.")
-    button.config(state=tk.NORMAL)
-
-
-
-def start_long_running_task():
-    thread = threading.Thread(target=perform_analysis, args=(task_button,))
-    thread.start()
-
-def show_selected_folders():
-    input_folder = input_folder_var.get()
-    output_folder = output_folder_var.get()
-    if input_folder and output_folder:
-        messagebox.showinfo("Selected Folders", f"Input Folder: {input_folder}\nOutput Folder: {output_folder}")
-    else:
-        messagebox.showwarning("Incomplete Selection", "Please select both input and output folders.")
-
-# Create the main window
-root = tk.Tk()
-root.title("Database and Folder Selection")
-
-# Database connection widgets
-tk.Label(root, text="Host:").grid(row=0, column=0, padx=10, pady=10)
-entry_host = tk.Entry(root)
-entry_host.insert(0, "localhost")  # Set default value to localhost
-entry_host.grid(row=0, column=1, padx=10, pady=10)
-
-tk.Label(root, text="Username:").grid(row=1, column=0, padx=10, pady=10)
-entry_user = tk.Entry(root)
-entry_user.insert(0, "root")  # Set default value to root
-entry_user.grid(row=1, column=1, padx=10, pady=10)
-
-tk.Label(root, text="Password:").grid(row=2, column=0, padx=10, pady=10)
-entry_password = tk.Entry(root, show="*")
-entry_password.grid(row=2, column=1, padx=10, pady=10)
-
-test_connection_button = tk.Button(root, text="Test Connection", command=lambda: test_connection(test_connection_button))
-test_connection_button.grid(row=3, columnspan=2, pady=20)
-
-# Create StringVar instances to hold folder paths
-input_folder_var = tk.StringVar()
-output_folder_var = tk.StringVar()
-
-# Folder selection widgets
-input_label = tk.Label(root, text="Select Input Folder:")
-input_label.grid(row=4, column=0, padx=10, pady=5)
-input_entry = tk.Entry(root, textvariable=input_folder_var, width=50)
-input_entry.grid(row=4, column=1, padx=10, pady=5)
-input_button = tk.Button(root, text="Browse", command=select_input_folder)
-input_button.grid(row=4, column=2, padx=10, pady=5)
-
-output_label = tk.Label(root, text="Select Output Folder:")
-output_label.grid(row=5, column=0, padx=10, pady=5)
-output_entry = tk.Entry(root, textvariable=output_folder_var, width=50)
-output_entry.grid(row=5, column=1, padx=10, pady=5)
-output_button = tk.Button(root, text="Browse", command=select_output_folder)
-output_button.grid(row=5, column=2, padx=10, pady=5)
-
-#show_button = tk.Button(root, text="Show Selected Folders", command=show_selected_folders)
-#show_button.grid(row=6, columnspan=3, pady=10)
-
-task_button = tk.Button(root, text="Perform Statistic Analysis", command=start_long_running_task)
-task_button.grid(row=7, columnspan=3, pady=20)
-
-# Start the Tkinter event loop
-root.mainloop()
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = MarkSubmissionSystem(root)
+    root.mainloop()
